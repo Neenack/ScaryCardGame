@@ -76,6 +76,11 @@ public abstract class CardGame<T> : MonoBehaviour, ICardGame where T : TablePlay
         OnGameEnded?.Invoke();
     }
 
+    protected virtual void CheckWinner()
+    {
+        EndGame();
+    }
+
     protected virtual void ResetHands()
     {
         // Reset everyone’s hand
@@ -106,8 +111,10 @@ public abstract class CardGame<T> : MonoBehaviour, ICardGame where T : TablePlay
             attempts++;
         }
 
-        if (CheckGameEnd())
+        // If no players left, end game
+        if (attempts >= players.Count || !currentPlayer.IsPlaying() || CheckGameEnd())
         {
+            CheckWinner();
             return;
         }
 

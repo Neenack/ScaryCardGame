@@ -31,7 +31,13 @@ public abstract class TablePlayer : MonoBehaviour
     {
         this.game = game;
         interactableDeck = game.GetCardGameInteractable();
+
+        game.OnGameStarted += Game_OnGameStarted;
+        game.OnGameEnded += Game_OnGameEnded;
     }
+
+    protected abstract void Game_OnGameEnded();
+    protected abstract void Game_OnGameStarted();
 
     protected virtual void OnDestroy()
     {

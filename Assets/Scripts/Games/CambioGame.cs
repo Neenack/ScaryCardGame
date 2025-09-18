@@ -13,6 +13,8 @@ public class CambioGame : CardGame<CambioPlayer>
     [SerializeField] private float cardLiftHeight = 0.1f;
     [SerializeField] private float cardRevealHeight = 0.2f;
 
+    [SerializeField] private float timeBetweenPlayerReveals = 1f;
+
     private Dictionary<PlayingCard, CambioPlayer> swapEventDictionary = new Dictionary<PlayingCard, CambioPlayer> ();
     private PlayingCard drawnCard = null;
 
@@ -21,11 +23,62 @@ public class CambioGame : CardGame<CambioPlayer>
         return false;
     }
 
+    public override void StartGame()
+    {
+        base.StartGame();
+
+        interactableDeck.SetText("Pull Card");
+    }
+
     protected override void EndGame()
     {
-        base.EndGame();
-
+        interactableDeck.SetText("Start Game");
         swapEventDictionary.Clear();
+
+        base.EndGame();
+    }
+
+    protected override void CheckWinner()
+    {
+        StartCoroutine(CheckWinnerRoutine());
+    }
+
+    private IEnumerator CheckWinnerRoutine()
+    {
+        //REVEAL ALL CARDS
+        foreach (var player in players)
+        {
+            foreach (var card in player.Hand.Cards)
+            {
+                card.FlipCard();
+            }
+
+            //GET SCORES
+            player.SetScoreText(player.GetScore().ToString());
+
+            yield return new WaitForSeconds(timeBetweenPlayerReveals);
+        }
+
+        //LOWEST SCORE WINS
+        int lowestScore = int.MaxValue;
+        CambioPlayer winner = null;
+        foreach (var player in players)
+        {
+            int score = player.GetScore();
+
+            if (score < lowestScore)
+            {
+                lowestScore = score;
+                winner = player;
+            }
+        }
+
+        Debug.Log($"{winner.GetName()} wins!");
+
+        yield return new WaitForSeconds(3f);
+
+        //END GAME
+        EndGame();
     }
 
     public override void NextTurn()

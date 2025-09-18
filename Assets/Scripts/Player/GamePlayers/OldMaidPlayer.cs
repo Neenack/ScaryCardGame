@@ -19,6 +19,9 @@ public class OldMaidPlayer : TablePlayer
         return Hand.Cards.Count > 0;
     }
 
+    protected override void Game_OnGameStarted() { }
+    protected override void Game_OnGameEnded() { }
+
     public void SetPreviousPlayer(List<OldMaidPlayer> players)
     {
         if (players == null || players.Count == 0)

@@ -44,13 +44,7 @@ public class OldMaidGame : CardGame<OldMaidPlayer>
 
     protected override bool CheckGameEnd()
     {
-        if (GetPlayerCount() <= 1)
-        {
-            EndGame();
-            return true;
-        }
-
-        return false;
+        return GetPlayerCount() <= 1;
     }
 
     protected override void EndGame()
