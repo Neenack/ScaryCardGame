@@ -1,9 +1,12 @@
 using System;
 using System.Collections;
 using UnityEngine;
+using static Interactable;
 
 public class PlayingCard : MonoBehaviour, IInteractable
 {
+    public event EventHandler OnInteract;
+
     public event Action<PlayingCard> OnShowCard;
     private Action onMoveComplete;
 
@@ -137,9 +140,6 @@ public class PlayingCard : MonoBehaviour, IInteractable
 
 
     #region Interactable
-
-    public event EventHandler OnInteract;
-
     private bool canInteract = false;
     private string interactableText;
 
@@ -150,7 +150,7 @@ public class PlayingCard : MonoBehaviour, IInteractable
 
     public void Interact(PlayerData player, PlayerInteractor interactor)
     {
-        OnInteract?.Invoke(this, EventArgs.Empty);
+        OnInteract?.Invoke(this, new InteractEventArgs(player));
     }
 
     #endregion

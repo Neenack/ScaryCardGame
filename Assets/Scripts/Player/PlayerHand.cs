@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using UnityEditor;
 using UnityEngine;
@@ -17,21 +18,19 @@ public class PlayerHand
     public string playerName;
     private List<PlayingCard> cards = new List<PlayingCard>();
 
-    public List<PlayingCard> Cards => cards
-        ;
-    public int GetTotalValue(bool isAceHigh)
-    {
-        int total = 0;
-        foreach (var card in Cards)
-        {
-            total += card.GetValue(isAceHigh);
-        }
-        return total;
-    }
+    public List<PlayingCard> Cards => cards;
 
     public PlayerHand(string name)
     {
         playerName = name;
+    }
+
+    public PlayerHand Clone(string name)
+    {
+        PlayerHand clone = new PlayerHand(name);
+        foreach (var card in cards)
+            clone.Cards.Add(card);
+        return clone;
     }
 
     public void AddCard(PlayingCard card)
@@ -39,6 +38,16 @@ public class PlayerHand
         if (card == null) return;
 
         cards.Add(card);
+        card.OnShowCard += Card_OnShowCard;
+
+        OnHandUpdated?.Invoke();
+    }
+
+    public void InsertCard(PlayingCard card, int index)
+    {
+        if (card == null) return;
+
+        cards.Insert(index, card);
         card.OnShowCard += Card_OnShowCard;
 
         OnHandUpdated?.Invoke();
@@ -76,6 +85,11 @@ public class PlayerHand
         OnHandUpdated?.Invoke();
     }
 
+    public void UpdateHand()
+    {
+        OnHandUpdated?.Invoke();
+    }
+
     public void ShowCards()
     {
         foreach (var card in cards)
@@ -97,6 +111,8 @@ public class PlayerHand
 
         return cards[index];
     }
+
+    public int GetIndexOfCard(PlayingCard card) => cards.IndexOf(card);
 
     public PlayingCard GetRandomCard()
     {

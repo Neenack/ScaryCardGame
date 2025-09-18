@@ -25,6 +25,30 @@ public abstract class CardGame<T> : MonoBehaviour, ICardGame where T : TablePlay
     [SerializeField] protected List<T> players = new List<T>();
     public IEnumerable<TablePlayer> GetPlayers() => players;
 
+
+    protected IInteractable interactableDeck;
+    public IInteractable GetCardGameInteractable() => interactableDeck;
+
+    private void Start()
+    {
+        interactableDeck = GetComponentInChildren<IInteractable>();
+
+        if (interactableDeck != null) interactableDeck.OnInteract += InteractableDeck_OnInteract;
+    }
+
+    private void OnDestroy()
+    {
+        interactableDeck.OnInteract -= InteractableDeck_OnInteract;
+    }
+
+    protected void InteractableDeck_OnInteract(object sender, EventArgs e)
+    {
+        interactableDeck.SetInteractable(false);
+        interactableDeck.OnInteract -= InteractableDeck_OnInteract;
+
+        StartGame();
+    }
+
     public virtual void StartGame()
     {
         foreach (var player in players) player.SetGame(this);
@@ -45,6 +69,9 @@ public abstract class CardGame<T> : MonoBehaviour, ICardGame where T : TablePlay
         Debug.Log("Game Finished!");
 
         ResetHands();
+
+        interactableDeck.SetInteractable(true);
+        interactableDeck.OnInteract += InteractableDeck_OnInteract;
 
         OnGameEnded?.Invoke();
     }
@@ -99,34 +126,46 @@ public abstract class CardGame<T> : MonoBehaviour, ICardGame where T : TablePlay
 
     protected abstract bool CheckGameEnd();
 
-    protected IEnumerator DealCardToPlayer(T player)
+
+    #region Card Dealing
+
+    protected PlayingCard DrawNewCard()
     {
-        // Draw a new card
         PlayingCardSO newCardSO = deck.DrawCard();
         if (newCardSO == null)
         {
             Debug.LogWarning("Deck is empty!");
-            yield break;
+            return null;
         }
 
-        PlayingCard newCard = newCardSO.SpawnCard(cardSpawnTransform);
+        return newCardSO.SpawnCard(cardSpawnTransform);
+    }
+
+    protected IEnumerator DealCardToPlayerHand(TablePlayer player)
+    {
+        PlayingCard newCard = DrawNewCard();
+
         player.AddCardToHand(newCard);
 
         yield return new WaitForSeconds(timeBetweenCardDeals);
     }
 
-    public void PlaceCardOnPile(PlayingCard card, float lerpSpeed = 5f)
+    public virtual void PullNewCard(TablePlayer player) => StartCoroutine(DealCardToPlayerHand(player));
+
+    public void PlaceCardOnPile(PlayingCard card, bool placeFaceDown = false, float lerpSpeed = 5f)
     {
         card.SetInteractable(false);
 
-        StartCoroutine(PlaceCardOnPileCoroutine(card, lerpSpeed));
+        StartCoroutine(PlaceCardOnPileCoroutine(card, placeFaceDown, lerpSpeed));
     }
 
-    protected IEnumerator PlaceCardOnPileCoroutine(PlayingCard card, float lerpSpeed = 5f)
+    protected IEnumerator PlaceCardOnPileCoroutine(PlayingCard card, bool placeFaceDown = false, float lerpSpeed = 5f)
     {
         // Determine target position and rotation based on the pile
         Vector3 targetPos = cardPileTransform.position;
         Quaternion targetRot = cardPileTransform.rotation;
+
+        if (!placeFaceDown) targetRot *= Quaternion.Euler(180, 0, 0);
 
         // Optional: add a slight offset so stacked cards don’t perfectly overlap
         float offsetY = 0.001f * cardPileTransform.childCount;
@@ -141,4 +180,6 @@ public abstract class CardGame<T> : MonoBehaviour, ICardGame where T : TablePlay
 
         yield return new WaitForSeconds(timeBetweenCardDeals);
     }
+
+    #endregion
 }

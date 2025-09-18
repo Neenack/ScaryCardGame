@@ -10,11 +10,13 @@ public abstract class TablePlayer : MonoBehaviour
 
     private PlayerHand hand;
     private ICardGame game;
+    protected IInteractable interactableDeck;
 
     [Header("Card Positions")]
-    [SerializeField] private Vector3 cardSpacing = new Vector3(0.3f, 0, 0);
-    [SerializeField] private float yOffset = 0;
+    [SerializeField] protected Vector3 cardSpacing = new Vector3(0.3f, 0, 0);
+    [SerializeField] protected float yOffset = 0;
     [SerializeField] private float fanAngle = 0f;
+    [SerializeField] private float dealingXRotation = 110f;
 
     protected bool isPlayerTurn = false;
 
@@ -24,9 +26,11 @@ public abstract class TablePlayer : MonoBehaviour
 
     public abstract bool IsPlaying();
 
+
     public void SetGame(ICardGame game)
     {
         this.game = game;
+        interactableDeck = game.GetCardGameInteractable();
     }
 
     protected virtual void OnDestroy()
@@ -51,6 +55,11 @@ public abstract class TablePlayer : MonoBehaviour
         hand.AddCard(card);
     }
 
+    public void InsertCardToHand(PlayingCard card, int index)
+    {
+        hand.InsertCard(card, index);
+    }
+
     public bool RemoveCardFromHand(PlayingCard card)
     {
         return hand.RemoveCard(card);
@@ -67,6 +76,8 @@ public abstract class TablePlayer : MonoBehaviour
 
         hand.ClearHand();
     }
+
+    public void UpdateHand() => Hand.UpdateHand();
 
     protected virtual void Hand_OnShowAnyCard(PlayingCard obj) { }
     protected virtual void Hand_OnHandUpdated()
@@ -92,7 +103,7 @@ public abstract class TablePlayer : MonoBehaviour
         }
     }
 
-    public void SortHand()
+    public virtual void SortHand()
     {
         PlayerHand sortedHand = new PlayerHand(name);
 
@@ -107,7 +118,7 @@ public abstract class TablePlayer : MonoBehaviour
         hand = sortedHand;
     }
 
-    public Vector3 GetCardPosition(int cardIndex, int totalCards)
+    public virtual Vector3 GetCardPosition(int cardIndex, int totalCards)
     {
         // Centered base position at this transform
         Vector3 basePos = transform.position + new Vector3(0, yOffset, 0);
@@ -123,7 +134,7 @@ public abstract class TablePlayer : MonoBehaviour
         return basePos + forwardOffset + upOffset + sideOffset;
     }
 
-    public Quaternion GetCardRotation(int cardIndex, int totalCards)
+    public virtual Quaternion GetCardRotation(int cardIndex, int totalCards)
     {
         // How much to angle cards apart (tweak this in inspector)
         float angleStep = fanAngle / Mathf.Max(1, totalCards - 1);
@@ -131,7 +142,7 @@ public abstract class TablePlayer : MonoBehaviour
         // Rotate around local up axis, centered on middle card
         float angle = (cardIndex - (totalCards - 1) / 2f) * angleStep;
 
-        return transform.rotation * Quaternion.Euler(110f, angle, 0f);
+        return transform.rotation * Quaternion.Euler(dealingXRotation, angle, 0f);
     }
 
     #endregion

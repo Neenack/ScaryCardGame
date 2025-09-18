@@ -23,7 +23,7 @@ public class OldMaidGame : CardGame<OldMaidPlayer>
 
         for (int i = 0; i < cardCount; i++)
         {
-            yield return StartCoroutine(DealCardToPlayer(players[playerIndex]));
+            yield return StartCoroutine(DealCardToPlayerHand(players[playerIndex]));
 
             playerIndex++;
             if (playerIndex >= players.Count) playerIndex = 0;

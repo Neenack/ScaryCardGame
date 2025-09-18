@@ -1,6 +1,8 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+
 
 public interface ICardGame
 {
@@ -9,5 +11,8 @@ public interface ICardGame
     public void StartGame();
     public void NextTurn();
     public IEnumerable<TablePlayer> GetPlayers();
-    public void PlaceCardOnPile(PlayingCard card, float lerpSpeed = 5f);
+    public IInteractable GetCardGameInteractable();
+
+    public void PullNewCard(TablePlayer player);
+    public void PlaceCardOnPile(PlayingCard card, bool placeFaceDown = false, float lerpSpeed = 5f);
 }

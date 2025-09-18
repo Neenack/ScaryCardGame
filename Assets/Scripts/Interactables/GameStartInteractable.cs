@@ -1,10 +1,14 @@
+using System;
 using System.Runtime.InteropServices.WindowsRuntime;
 using Unity.VisualScripting;
 using UnityEngine;
+using static Interactable;
 
 public class GameStartInteractable : MonoBehaviour, IInteractable
 {
-    [SerializeField] private ICardGame game;
+    public event EventHandler OnInteract;
+
+    [SerializeField] private CardGame<TablePlayer> game;
 
     private bool isGameRunning = false;
     private bool canInteract = true;
@@ -19,7 +23,7 @@ public class GameStartInteractable : MonoBehaviour, IInteractable
 
     private void Start()
     {
-        game = GetComponentInParent<ICardGame>();
+        game = GetComponentInParent<CardGame<TablePlayer>>();
 
         game.OnGameStarted += Game_OnGameStarted;
         game.OnGameEnded += Game_OnGameFinished;
@@ -37,6 +41,6 @@ public class GameStartInteractable : MonoBehaviour, IInteractable
 
     public void Interact(PlayerData player, PlayerInteractor interactor)
     {
-        game.StartGame();
+        OnInteract?.Invoke(this, new InteractEventArgs(player));
     }
 }
