@@ -326,7 +326,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 915164071938063264, guid: 9e5128031b6818f459c8b3290075d3a2, type: 3}
       propertyPath: interactableText
-      value: Call Game
+      value: Call Cambio
       objectReference: {fileID: 0}
     - target: {fileID: 3463814188829457804, guid: 9e5128031b6818f459c8b3290075d3a2, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'

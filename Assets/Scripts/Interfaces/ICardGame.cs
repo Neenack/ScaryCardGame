@@ -15,4 +15,5 @@ public interface ICardGame
 
     public PlayingCard PullNewCard(TablePlayer player);
     public void PlaceCardOnPile(PlayingCard card, bool placeFaceDown = false, float lerpSpeed = 5f);
+    public PlayingCard GetTopPileCard();
 }

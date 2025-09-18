@@ -5,10 +5,11 @@ using System.Collections.Generic;
 using System.Linq;
 using Unity.VisualScripting;
 using UnityEngine;
+using UnityEngine.XR;
 
 public class CambioGame : CardGame<CambioPlayer>
 {
-    [Header("Four Card Game Settings")]
+    [Header("Cambio Settings")]
     [SerializeField] private float cardViewingTime = 3f;
     [SerializeField] private Vector3 cardPullPositionOffset = new Vector3(0f, 0.3f, 0f);
 
@@ -17,10 +18,16 @@ public class CambioGame : CardGame<CambioPlayer>
 
     [SerializeField] private float timeBetweenPlayerReveals = 1f;
 
-    [Header("AI")]
+    [Header("Stacking Settings")]
+    [SerializeField] private bool cardStacking = true;
+    [SerializeField] private float stackingTime = 2f;
+    private bool isStacking = false;
+    private bool hasStacked = false;
+
+    [Header("AI Settings")]
     [SerializeField] private float AIThinkingTime = 1f;
 
-    private Dictionary<PlayingCard, CambioPlayer> swapEventDictionary = new Dictionary<PlayingCard, CambioPlayer> ();
+    private Dictionary<PlayingCard, TablePlayer> swapEventDictionary = new Dictionary<PlayingCard, TablePlayer>();
     private PlayingCard drawnCard = null;
 
     protected override bool CheckGameEnd()
@@ -88,12 +95,43 @@ public class CambioGame : CardGame<CambioPlayer>
 
     public override void NextTurn()
     {
-        base.NextTurn();
+        StartCoroutine(NextTurnCoroutine());
+    }
 
+    private IEnumerator NextTurnCoroutine()
+    {
         foreach (var player in players)
         {
             player.SetHandInteractable(false);
         }
+
+        if (cardStacking && TryEnableStacking())
+        {
+            isStacking = false;
+            hasStacked = false;
+
+            yield return new WaitForSeconds(stackingTime / 2);
+
+            //LET AI TRY STACK
+            foreach (var player in players)
+            {
+                if (!player.IsAI) continue;
+
+                if (player.CanStack())
+                {
+                    StackCard(player, player.GetCardToStack());
+                    break;
+                }
+            }
+
+            yield return new WaitForSeconds(stackingTime / 2);
+
+            yield return new WaitUntil(() => !isStacking);
+
+            DisableStacking();
+        }
+
+        base.NextTurn();
     }
 
     protected override IEnumerator DealInitialCards()
@@ -121,6 +159,11 @@ public class CambioGame : CardGame<CambioPlayer>
         yield return new WaitForSeconds(cardViewingTime);
 
         NextTurn();
+    }
+
+    public override void PlaceCardOnPile(PlayingCard card, bool placeFaceDown = false, float lerpSpeed = 5f)
+    {
+        base.PlaceCardOnPile(card, placeFaceDown, lerpSpeed);
     }
 
     private IEnumerator RevealSingleCard(PlayingCard card, CambioPlayer player, Vector3 basePos, Action OnComplete = null)
@@ -159,6 +202,7 @@ public class CambioGame : CardGame<CambioPlayer>
         // SHOW TO PLAYER
         // LET THEM EITHER CHOOSE ONE OF THERE OWN CARDS OR DECLINE NEW CARD
 
+
         drawnCard = DrawNewCard();
 
         drawnCard.MoveTo(player.transform.position + cardPullPositionOffset, 5f);
@@ -187,6 +231,12 @@ public class CambioGame : CardGame<CambioPlayer>
     {
         yield return new WaitForSeconds(AIThinkingTime);
 
+        if (aiPlayer.Hand.Cards.Count == 0)
+        {
+            aiPlayer.CallCambio();
+            yield break;
+        }
+
         if (aiPlayer.ShouldDiscardCard(drawnCard))
         {
             PlaceCardOnPile(drawnCard);
@@ -198,8 +248,7 @@ public class CambioGame : CardGame<CambioPlayer>
         else
         {
             //AI WANTS TO KEEP CARD
-            int indexToSwap = aiPlayer.GetIndexToSwap();
-            PlayingCard cardToDiscard = aiPlayer.Hand.GetCard(indexToSwap);
+            PlayingCard cardToDiscard = aiPlayer.GetCardtoSwap();
 
             if (TrySwapCards(aiPlayer, drawnCard, cardToDiscard))
             {
@@ -407,8 +456,8 @@ public class CambioGame : CardGame<CambioPlayer>
     private void RevealOtherPlayerCardEvent(object sender, EventArgs e)
     {
         PlayingCard chosenCard = sender as PlayingCard;
-        CambioPlayer otherPlayer = GetPlayerWithCard(chosenCard);
-        
+        TablePlayer otherPlayer = GetPlayerWithCard(chosenCard);
+
         //UNSUBSCRIBE FROM EVENTS AND FIND PLAYER WITH CARD
         foreach (var player in players)
         {
@@ -427,7 +476,7 @@ public class CambioGame : CardGame<CambioPlayer>
     private void SwapHandsEvent(object sender, EventArgs e)
     {
         PlayingCard chosenCard = sender as PlayingCard;
-        CambioPlayer otherPlayer = GetPlayerWithCard(chosenCard);
+        TablePlayer otherPlayer = GetPlayerWithCard(chosenCard);
 
         //UNSUBSCRIBE FROM EVENTS AND FIND PLAYER WITH CARD
         foreach (var player in players)
@@ -448,41 +497,6 @@ public class CambioGame : CardGame<CambioPlayer>
         SwapHands(currentPlayer, otherPlayer);
 
         NextTurn();
-    }
-
-    private void SwapHands(CambioPlayer player1, CambioPlayer player2)
-    {
-        List<PlayingCard> tempList = new List<PlayingCard>();
-
-        PlayerHand currentPlayerHand = player1.Hand;
-        PlayerHand otherPlayerHand = player2.Hand;
-
-        //REMOVE ALL CARDS FROM OTHER HAND AND ADD THEM TO TEMP LIST
-        int cardCount = otherPlayerHand.Cards.Count;
-        for (int i = 0; i < cardCount; i++)
-        {
-            PlayingCard card = otherPlayerHand.GetCard(0);
-
-            if (otherPlayerHand.RemoveCard(card))
-            {
-                tempList.Add(card);
-            }
-        }
-
-        //SWAP ALL CARDS FROM CURRENT HAND TO OTHER HAND
-        cardCount = currentPlayerHand.Cards.Count;
-        for (int i = 0; i < cardCount; i++)
-        {
-            PlayingCard card = currentPlayerHand.GetCard(0);
-
-            if (currentPlayerHand.RemoveCard(card))
-            {
-                otherPlayerHand.AddCard(card);
-            }
-        }
-
-        //ADD ALL TEMP CARDS BACK
-        foreach (var card in tempList) currentPlayerHand.AddCard(card);
     }
 
     #endregion
@@ -529,7 +543,7 @@ public class CambioGame : CardGame<CambioPlayer>
             foreach (var card in player.Hand.Cards) card.OnInteract -= ChooseOtherPlayerSwapEvent;
         }
 
-        CambioPlayer otherPlayer = GetPlayerWithCard(cardChosen);
+        TablePlayer otherPlayer = GetPlayerWithCard(cardChosen);
 
         //ADD TO DICTIONARY
         swapEventDictionary.Add(cardChosen, otherPlayer);
@@ -567,7 +581,7 @@ public class CambioGame : CardGame<CambioPlayer>
     private void ChooseCardToKeep(PlayingCard chosenCard)
     {
         //IF PLAYER CHOSES TO KEEP THEIR OWN CARD NOTHING HAPPENS
-        if (swapEventDictionary.TryGetValue(chosenCard, out CambioPlayer playerWithCard) && playerWithCard == currentPlayer)
+        if (swapEventDictionary.TryGetValue(chosenCard, out TablePlayer playerWithCard) && playerWithCard == currentPlayer)
         {
             //CALL UPDATE ON CARDS SO THEY GO BACK TO ORIGINAL POSITION
             foreach (var kvp in swapEventDictionary)
@@ -664,7 +678,7 @@ public class CambioGame : CardGame<CambioPlayer>
             foreach (var card in player.Hand.Cards) card.OnInteract -= ChooseOtherPlayerBlindSwapEvent;
         }
 
-        CambioPlayer otherPlayer = GetPlayerWithCard(cardChosen);
+        TablePlayer otherPlayer = GetPlayerWithCard(cardChosen);
 
         //PLAYER SWAP CARDS!
         PlayingCard playerCard = null;
@@ -677,36 +691,11 @@ public class CambioGame : CardGame<CambioPlayer>
             }
         }
 
-        BlindSwapCards(playerCard, cardChosen, otherPlayer);
+        SwapCards(currentPlayer, playerCard, otherPlayer, cardChosen);
+        swapEventDictionary.Clear();
 
         NextTurn();
     }
-
-    private void BlindSwapCards(PlayingCard playerCard, PlayingCard otherCard, CambioPlayer otherPlayer)
-    {
-        if (playerCard != null)
-        {
-            // Get indexes
-            int playerCardIndex = currentPlayer.Hand.GetIndexOfCard(playerCard);
-            int otherCardIndex = otherPlayer.Hand.GetIndexOfCard(otherCard);
-
-            // Remove from hands
-            if (currentPlayer.Hand.RemoveCard(playerCard) &&
-                otherPlayer.Hand.RemoveCard(otherCard))
-            {
-                // Insert into opposite hands, keeping slot position
-                currentPlayer.Hand.InsertCard(otherCard, playerCardIndex);
-                otherPlayer.Hand.InsertCard(playerCard, otherCardIndex);
-            }
-        }
-        else
-        {
-            Debug.LogWarning("Could not find player card!");
-        }
-
-        swapEventDictionary.Clear();
-    }
-
     #endregion
 
     #region Reveal Whole Hand
@@ -771,7 +760,7 @@ public class CambioGame : CardGame<CambioPlayer>
     private IEnumerator ChooseSwapEvent_AI()
     {
         //CHOOSE ONE OF YOUR OWN CARDS
-        PlayingCard cardToSwap = currentPlayer.Hand.GetCard(currentPlayer.GetIndexToSwap());
+        PlayingCard cardToSwap = currentPlayer.GetCardtoSwap();
         LiftCard(cardToSwap);
 
         swapEventDictionary.Add(cardToSwap, currentPlayer);
@@ -815,11 +804,8 @@ public class CambioGame : CardGame<CambioPlayer>
     private IEnumerator BlindSwapEvent_AI()
     {
         //CHOOSE ONE OF YOUR OWN CARDS
-        PlayingCard cardToSwap = currentPlayer.Hand.GetCard(currentPlayer.GetIndexToSwap());
-
+        PlayingCard cardToSwap = currentPlayer.GetCardtoSwap();
         LiftCard(cardToSwap);
-
-        swapEventDictionary.Add(cardToSwap, currentPlayer);
 
         yield return new WaitForSeconds(AIThinkingTime);
 
@@ -828,11 +814,8 @@ public class CambioGame : CardGame<CambioPlayer>
         CambioPlayer randomPlayer = playersToChoose[UnityEngine.Random.Range(0, playersToChoose.Count)];
         PlayingCard randomCard = randomPlayer.Hand.GetRandomCard();
 
-        swapEventDictionary.Add(randomCard, randomPlayer);
-
-
-        BlindSwapCards(cardToSwap, randomCard, randomPlayer);
-
+        SwapCards(currentPlayer, cardToSwap, randomPlayer, randomCard);
+        
         yield return new WaitForSeconds(AIThinkingTime);
 
         NextTurn();
@@ -842,21 +825,87 @@ public class CambioGame : CardGame<CambioPlayer>
 
     #endregion
 
-    private CambioPlayer GetPlayerWithCard(PlayingCard card)
+    #region Stacking
+
+    private bool TryEnableStacking()
     {
+        if (GetTopPileCard() == null) return false;
+
+        Debug.Log("Stacking enabled");
+
         foreach (var player in players)
         {
-            foreach (var cardToCheck in player.Hand.Cards)
+            player.SetHandInteractable(true);
+
+            foreach (var playerCard in player.Hand.Cards)
             {
-                if (cardToCheck.CardSO == card.CardSO)
-                {
-                    return player;
-                }
+                playerCard.OnInteract += Card_OnInteract_Stack;
             }
         }
 
-        Debug.LogWarning("Could not find player with card: " + card.ToString());
-        NextTurn();
-        return null;
+        return true;
     }
+
+    private void DisableStacking()
+    {
+        Debug.Log("Stacking disabled");
+
+        foreach (var player in players)
+        {
+            player.SetHandInteractable(false);
+
+            foreach (var playerCard in player.Hand.Cards)
+            {
+                playerCard.OnInteract -= Card_OnInteract_Stack;
+            }
+        }
+    }
+
+    private void Card_OnInteract_Stack(object sender, EventArgs e)
+    {
+        PlayingCard card = (PlayingCard)sender;
+        TablePlayer player = GetPlayerWithCard(card);
+        StackCard(player, card);
+    }
+
+    private void StackCard(TablePlayer player, PlayingCard card)
+    {
+        if (hasStacked) return;
+
+        DisableStacking();
+        isStacking = true;
+        hasStacked = true;
+
+        StartCoroutine(StackCardCoroutine(player, card));
+    }
+
+    private IEnumerator StackCardCoroutine(TablePlayer player, PlayingCard card)
+    {
+        if (!player.RemoveCardFromHand(card))
+        {
+            Debug.LogWarning("Card failed to be removed from hand");
+            yield break;
+        }
+
+        PlayingCard topCard = GetTopPileCard();
+        PlaceCardOnPile(card);
+
+        yield return new WaitForSeconds(4f);
+
+        //If cards are not the same value, take card back and add a new one
+        if (topCard.GetValue(false) != card.GetValue(false))
+        {
+            player.AddCardToHand(card);
+
+            yield return new WaitForSeconds(2f);
+
+            DealCardToPlayerHand(player);
+
+            yield return new WaitForSeconds(2f);
+        }
+
+        isStacking = false;
+    }
+
+    #endregion
 }

@@ -96,13 +96,42 @@ public class CambioPlayer : TablePlayer
         }
         else
         {
+            if (TryCallCambio())
+            {
+                Game.NextTurn();
+                return;
+            }
+
             Game.PullNewCard(this);
         }
     }
 
     private void CallRoundButton_OnInteract(object sender, System.EventArgs e)
     {
+        CallCambio();
+    }
+
+    public bool TryCallCambio()
+    {
+        float confidence = (float)seenCards.Count / Hand.Cards.Count;
+        float expectedScore = (GetScore() / confidence);
+
+        if (expectedScore <= 6)
+        {
+            CallCambio();
+            return true;
+        }
+
+        return false;
+    }
+
+    public void CallCambio()
+    {
         hasCalledGame = true;
+
+        callRoundButton.SetInteractable(false);
+        callRoundButton.gameObject.SetActive(false);
+
         Game.NextTurn();
     }
 
@@ -155,6 +184,9 @@ public class CambioPlayer : TablePlayer
 
     private void SkipAbilityButton_OnInteract(object sender, System.EventArgs e)
     {
+        skipAbilityButton.gameObject.SetActive(false);
+        skipAbilityButton.SetInteractable(false);
+
         Game.NextTurn();
     }
 
@@ -214,6 +246,44 @@ public class CambioPlayer : TablePlayer
     private PlayingCard GetHighestSeenCard() => seenCards.OrderByDescending(c => GetCardValue(c)).FirstOrDefault();
 
     /// <summary>
+    /// Asks the AI if it can stack a card
+    /// </summary>
+    /// <returns>True if can stack</returns>
+    public bool CanStack()
+    {
+        PlayingCard topCard = Game.GetTopPileCard();
+
+        foreach (var card in seenCards)
+        {
+            if (card.GetValue(false) == topCard.GetValue(false))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Gets a matching card to stack on the pile
+    /// </summary>
+    /// <returns>Playing card</returns>
+    public PlayingCard GetCardToStack()
+    {
+        PlayingCard topCard = Game.GetTopPileCard();
+
+        foreach (var card in seenCards)
+        {
+            if (card.GetValue(false) == topCard.GetValue(false))
+            {
+                return card;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Asks the AI if it should discard a card
     /// </summary>
     /// /// <param name="card">The card to compare with</param>
@@ -244,12 +314,12 @@ public class CambioPlayer : TablePlayer
     /// <summary>
     /// Chooses a card the AI would most like to swap out
     /// </summary>
-    /// <returns>The index of the card to remove</returns>
-    public int GetIndexToSwap()
+    /// <returns>A playing card</returns>
+    public PlayingCard GetCardtoSwap()
     {
         if (seenCards.Count == 0)
         {
-            return UnityEngine.Random.Range(0, Hand.Cards.Count);
+            return Hand.Cards[UnityEngine.Random.Range(0, Hand.Cards.Count)];
         }
 
         PlayingCard highestCard = GetHighestSeenCard();
@@ -257,7 +327,7 @@ public class CambioPlayer : TablePlayer
         //If highest card is above 9 or has seen all the cards then trade it out
         if (GetCardValue(highestCard) > 9)
         {
-            return Hand.GetIndexOfCard(highestCard);
+            return highestCard;
         }
 
         //Otherwise replace an unknown card
@@ -266,10 +336,10 @@ public class CambioPlayer : TablePlayer
         //If it has seen all the cards, get rid of the highest one
         if (unseenCards.Count == 0)
         {
-            return Hand.GetIndexOfCard(highestCard);
+            return highestCard;
         }
 
-        return Hand.GetIndexOfCard(unseenCards[UnityEngine.Random.Range(0, unseenCards.Count)]);
+        return unseenCards[UnityEngine.Random.Range(0, unseenCards.Count)];
     }
 
     /// <summary>
