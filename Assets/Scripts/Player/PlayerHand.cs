@@ -15,6 +15,9 @@ public class PlayerHand
     public event Action OnHandUpdated;
     public event Action<PlayingCard> OnShowAnyCard;
 
+    public event Action<PlayingCard> OnAddCard;
+    public event Action<PlayingCard> OnRemoveCard;
+
     public string playerName;
     private List<PlayingCard> cards = new List<PlayingCard>();
 
@@ -40,6 +43,7 @@ public class PlayerHand
         cards.Add(card);
         card.OnShowCard += Card_OnShowCard;
 
+        OnAddCard?.Invoke(card);
         OnHandUpdated?.Invoke();
     }
 
@@ -50,6 +54,7 @@ public class PlayerHand
         cards.Insert(index, card);
         card.OnShowCard += Card_OnShowCard;
 
+        OnAddCard?.Invoke(card);
         OnHandUpdated?.Invoke();
     }
 
@@ -67,6 +72,7 @@ public class PlayerHand
         foundCard.OnShowCard -= Card_OnShowCard;
         cards.Remove(foundCard);
 
+        OnRemoveCard?.Invoke(foundCard);
         OnHandUpdated?.Invoke();
 
         return true;

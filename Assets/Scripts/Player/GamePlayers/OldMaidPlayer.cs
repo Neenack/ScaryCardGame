@@ -19,6 +19,11 @@ public class OldMaidPlayer : TablePlayer
         return Hand.Cards.Count > 0;
     }
 
+    public override int GetCardValue(PlayingCard card)
+    {
+        return 0;
+    }
+
     protected override void Game_OnGameStarted() { }
     protected override void Game_OnGameEnded() { }
 

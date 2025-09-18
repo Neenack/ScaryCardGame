@@ -26,6 +26,7 @@ public abstract class TablePlayer : MonoBehaviour
 
     public abstract bool IsPlaying();
 
+    public abstract int GetCardValue(PlayingCard card);
 
     public void SetGame(ICardGame game)
     {

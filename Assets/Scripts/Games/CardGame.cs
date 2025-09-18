@@ -29,6 +29,8 @@ public abstract class CardGame<T> : MonoBehaviour, ICardGame where T : TablePlay
     protected IInteractable interactableDeck;
     public IInteractable GetCardGameInteractable() => interactableDeck;
 
+    private List<PlayingCard> pileCards = new List<PlayingCard>();
+
     private void Start()
     {
         interactableDeck = GetComponentInChildren<IInteractable>();
@@ -69,6 +71,9 @@ public abstract class CardGame<T> : MonoBehaviour, ICardGame where T : TablePlay
         Debug.Log("Game Finished!");
 
         ResetHands();
+
+        foreach (var card in pileCards) Destroy(card);
+        pileCards.Clear();
 
         interactableDeck.SetInteractable(true);
         interactableDeck.OnInteract += InteractableDeck_OnInteract;
@@ -148,16 +153,16 @@ public abstract class CardGame<T> : MonoBehaviour, ICardGame where T : TablePlay
         return newCardSO.SpawnCard(cardSpawnTransform);
     }
 
-    protected IEnumerator DealCardToPlayerHand(TablePlayer player)
+    protected PlayingCard DealCardToPlayerHand(TablePlayer player)
     {
         PlayingCard newCard = DrawNewCard();
 
         player.AddCardToHand(newCard);
 
-        yield return new WaitForSeconds(timeBetweenCardDeals);
+        return newCard;
     }
 
-    public virtual void PullNewCard(TablePlayer player) => StartCoroutine(DealCardToPlayerHand(player));
+    public virtual PlayingCard PullNewCard(TablePlayer player) => DealCardToPlayerHand(player);
 
     public void PlaceCardOnPile(PlayingCard card, bool placeFaceDown = false, float lerpSpeed = 5f)
     {
@@ -175,7 +180,7 @@ public abstract class CardGame<T> : MonoBehaviour, ICardGame where T : TablePlay
         if (!placeFaceDown) targetRot *= Quaternion.Euler(180, 0, 0);
 
         // Optional: add a slight offset so stacked cards don’t perfectly overlap
-        float offsetY = 0.001f * cardPileTransform.childCount;
+        float offsetY = 0.0025f * cardPileTransform.childCount;
         targetPos += Vector3.up * offsetY;
 
         // Move and rotate the card
@@ -184,6 +189,8 @@ public abstract class CardGame<T> : MonoBehaviour, ICardGame where T : TablePlay
 
         // Optionally parent the card to the pile for organization
         card.transform.SetParent(cardPileTransform);
+
+        pileCards.Add(card);
 
         yield return new WaitForSeconds(timeBetweenCardDeals);
     }

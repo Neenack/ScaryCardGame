@@ -13,6 +13,6 @@ public interface ICardGame
     public IEnumerable<TablePlayer> GetPlayers();
     public IInteractable GetCardGameInteractable();
 
-    public void PullNewCard(TablePlayer player);
+    public PlayingCard PullNewCard(TablePlayer player);
     public void PlaceCardOnPile(PlayingCard card, bool placeFaceDown = false, float lerpSpeed = 5f);
 }

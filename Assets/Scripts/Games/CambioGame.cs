@@ -2,6 +2,8 @@ using NUnit.Framework;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
+using Unity.VisualScripting;
 using UnityEngine;
 
 public class CambioGame : CardGame<CambioPlayer>
@@ -14,6 +16,9 @@ public class CambioGame : CardGame<CambioPlayer>
     [SerializeField] private float cardRevealHeight = 0.2f;
 
     [SerializeField] private float timeBetweenPlayerReveals = 1f;
+
+    [Header("AI")]
+    [SerializeField] private float AIThinkingTime = 1f;
 
     private Dictionary<PlayingCard, CambioPlayer> swapEventDictionary = new Dictionary<PlayingCard, CambioPlayer> ();
     private PlayingCard drawnCard = null;
@@ -97,7 +102,8 @@ public class CambioGame : CardGame<CambioPlayer>
         {
             foreach (var player in players)
             {
-                yield return StartCoroutine(DealCardToPlayerHand(player));
+                DealCardToPlayerHand(player);
+                yield return new WaitForSeconds(timeBetweenCardDeals);
             }
         }
 
@@ -117,9 +123,10 @@ public class CambioGame : CardGame<CambioPlayer>
         NextTurn();
     }
 
-    private IEnumerator RevealSingleCard(PlayingCard card, TablePlayer player, Vector3 basePos, Action OnComplete = null)
+    private IEnumerator RevealSingleCard(PlayingCard card, CambioPlayer player, Vector3 basePos, Action OnComplete = null)
     {
         Vector3 originalPos = card.transform.position;
+        Quaternion originalRot = card.transform.rotation;
 
         card.MoveTo(basePos + new Vector3(0, cardRevealHeight, 0), 5f);
         Quaternion targetUpwardsRot = Quaternion.LookRotation(player.transform.forward, Vector3.up) * Quaternion.Euler(90f, 0f, 0);
@@ -128,8 +135,9 @@ public class CambioGame : CardGame<CambioPlayer>
         yield return new WaitForSeconds(cardViewingTime);
 
         card.MoveTo(originalPos, 5f);
-        Quaternion targetDownwardsRot = Quaternion.LookRotation(player.transform.forward, Vector3.up);
-        card.RotateTo(targetDownwardsRot, 5f);
+        card.RotateTo(originalRot, 5f);
+
+        player.AddSeenCard(card);
 
         OnComplete?.Invoke();
     }
@@ -145,7 +153,7 @@ public class CambioGame : CardGame<CambioPlayer>
         card.RotateTo(targetUpwardsRot, 5f);
     }
 
-    public override void PullNewCard(TablePlayer player)
+    public override PlayingCard PullNewCard(TablePlayer player)
     {
         // NEEDS TO PICK UP CARD
         // SHOW TO PLAYER
@@ -156,14 +164,57 @@ public class CambioGame : CardGame<CambioPlayer>
         drawnCard.MoveTo(player.transform.position + cardPullPositionOffset, 5f);
         drawnCard.RotateTo(Quaternion.LookRotation(player.transform.forward, Vector3.up) * Quaternion.Euler(90f, 0f, 0), 5f);
 
-        drawnCard.SetInteractable(true);
-        drawnCard.OnInteract += DrawnCard_OnInteract;
-
-        foreach (var card in player.Hand.Cards)
+        if (!player.IsAI)
         {
-            card.SetInteractable(true);
-            card.OnInteract += Card_OnInteract;
+            drawnCard.SetInteractable(true);
+            drawnCard.OnInteract += DrawnCard_OnInteract;
+
+            foreach (var card in player.Hand.Cards)
+            {
+                card.SetInteractable(true);
+                card.OnInteract += Card_OnInteract;
+            }
         }
+        else
+        {
+            StartCoroutine(AIPullCard(player as CambioPlayer));
+        }
+
+        return drawnCard;
+    }
+
+    private IEnumerator AIPullCard(CambioPlayer aiPlayer)
+    {
+        yield return new WaitForSeconds(AIThinkingTime);
+
+        if (aiPlayer.ShouldDiscardCard(drawnCard))
+        {
+            PlaceCardOnPile(drawnCard);
+
+            yield return new WaitForSeconds(AIThinkingTime);
+
+            DoCardAbility();
+        }
+        else
+        {
+            //AI WANTS TO KEEP CARD
+            int indexToSwap = aiPlayer.GetIndexToSwap();
+            PlayingCard cardToDiscard = aiPlayer.Hand.GetCard(indexToSwap);
+
+            if (TrySwapCards(aiPlayer, drawnCard, cardToDiscard))
+            {
+                yield return new WaitForSeconds(AIThinkingTime);
+            }
+            else
+            {
+                Debug.LogWarning("Failed to swap cards");
+            }
+
+            NextTurn();
+        }
+
+        yield break;
+
     }
 
     //SWAP CARD
@@ -174,14 +225,7 @@ public class CambioGame : CardGame<CambioPlayer>
 
         int cardIndex = currentPlayer.Hand.GetIndexOfCard(cardToDiscard);
 
-        //DISCARD CHOSEN CARD
-        if (currentPlayer.RemoveCardFromHand(cardToDiscard))
-        {
-            PlaceCardOnPile(cardToDiscard);
-
-            //ADD NEW CARD TO PREVIOUS CARD POSITION
-            if (drawnCard) currentPlayer.InsertCardToHand(drawnCard, cardIndex);
-        }
+        TrySwapCards(currentPlayer, drawnCard, cardToDiscard);
 
         //UNSUBSCRIBE DRAWN CARD
         drawnCard.OnInteract -= DrawnCard_OnInteract;
@@ -193,6 +237,29 @@ public class CambioGame : CardGame<CambioPlayer>
         }
 
         NextTurn();
+    }
+
+    private bool TrySwapCards(CambioPlayer player, PlayingCard cardToAdd, PlayingCard cardToDiscard)
+    {
+        int index = player.Hand.GetIndexOfCard(cardToDiscard);
+
+        if (index == -1)
+        {
+            Debug.LogWarning($"Index of card {cardToDiscard.ToString()} not found to swap");
+            return false;
+        }
+
+        if (player.RemoveCardFromHand(cardToDiscard))
+        {
+            PlaceCardOnPile(cardToDiscard);
+            player.InsertCardToHand(cardToAdd, index);
+            player.AddSeenCard(cardToAdd);
+
+            return true;
+        }
+
+        Debug.LogWarning("Card cannot be swapped as previous card was not removed from hand");
+        return false;
     }
 
     //DISCARD CARD
@@ -215,17 +282,29 @@ public class CambioGame : CardGame<CambioPlayer>
 
     private void DoCardAbility()
     {
-        switch (drawnCard.GetValue(false))
+        currentPlayer.EnableSkipAbilityBtn();
+
+        switch (currentPlayer.GetCardValue(drawnCard))
         {
             case < 6:
+
+                Debug.Log("Less than 6, do nothing!");
+
                 NextTurn();
                 break;
             case 6:
             case 7:
                 Debug.Log("Look at your own card!");
 
-                currentPlayer.SetHandInteractable(true);
-                foreach (var card in currentPlayer.Hand.Cards) card.OnInteract += RevealPersonalCardEvent;
+                if (currentPlayer.IsAI)
+                {
+                    RevealPersonalCardEvent_AI();
+                }
+                else
+                {
+                    currentPlayer.SetHandInteractable(true);
+                    foreach (var card in currentPlayer.Hand.Cards) card.OnInteract += RevealPersonalCardEvent;
+                }
 
                 break;
 
@@ -234,25 +313,40 @@ public class CambioGame : CardGame<CambioPlayer>
 
                 Debug.Log("Look at someone elses card!");
 
-                currentPlayer.SetHandInteractable(false);
-                foreach (var player in players)
+                if (currentPlayer.IsAI)
                 {
-                    if (player == currentPlayer) continue;
+                    RevealOtherPlayerCardEvent_AI();
+                }
+                else
+                {
+                    currentPlayer.SetHandInteractable(false);
+                    foreach (var player in players)
+                    {
+                        if (player == currentPlayer) continue;
 
-                    player.SetHandInteractable(true);
-                    foreach (var card in player.Hand.Cards) card.OnInteract += RevealOtherPlayerCardEvent;
+                        player.SetHandInteractable(true);
+                        foreach (var card in player.Hand.Cards) card.OnInteract += RevealOtherPlayerCardEvent;
+                    }
                 }
 
                 break;
 
             case 10:
                 Debug.Log("Swap entire hands!");
-                currentPlayer.SetHandInteractable(false);
 
-                foreach (var player in players)
+                if (currentPlayer.IsAI)
                 {
-                    player.SetHandInteractable(true);
-                    foreach (var card in player.Hand.Cards) card.OnInteract += SwapHandsEvent;
+                    SwapHandEvent_AI();
+                }
+                else
+                {
+                    currentPlayer.SetHandInteractable(false);
+
+                    foreach (var player in players)
+                    {
+                        player.SetHandInteractable(true);
+                        foreach (var card in player.Hand.Cards) card.OnInteract += SwapHandsEvent;
+                    }
                 }
 
                 break;
@@ -260,31 +354,44 @@ public class CambioGame : CardGame<CambioPlayer>
             case 11:
                 Debug.Log("Choose 2 cards to decide to swap");
 
-                currentPlayer.SetHandInteractable(true);
-                foreach (var card in currentPlayer.Hand.Cards) card.OnInteract +=ChooseSwapEvent;
-
-                break;
-            case 12:
-                Debug.Log("Blind swap!");
-
-                currentPlayer.SetHandInteractable(true);
-                foreach (var card in currentPlayer.Hand.Cards) card.OnInteract += BlindSwapEvent;
-
-                break;
-            case 13:
-                if (drawnCard.Suit == Suit.Hearts || drawnCard.Suit == Suit.Diamonds)
+                if (currentPlayer.IsAI)
                 {
-                    Debug.Log("Look at all your cards!");
-                    RevealWholeHand();
+                    StartCoroutine(ChooseSwapEvent_AI());
                 }
                 else
                 {
-                    NextTurn();
+                    currentPlayer.SetHandInteractable(true);
+                    foreach (var card in currentPlayer.Hand.Cards) card.OnInteract += ChooseSwapEvent;
                 }
+
+                break;
+
+            case 12:
+                Debug.Log("Blind swap!");
+
+                if (currentPlayer.IsAI)
+                {
+                    StartCoroutine(BlindSwapEvent_AI());
+                }
+                else
+                {
+                    currentPlayer.SetHandInteractable(true);
+                    foreach (var card in currentPlayer.Hand.Cards) card.OnInteract += BlindSwapEvent;
+                }
+
+                break;
+
+            case 13:
+                Debug.Log("Look at all your cards!");
+
+                RevealWholeHand();
+
                 break;
 
         }
     }
+
+    #region Player Abilities
 
     #region Reveal Single Card
 
@@ -338,9 +445,17 @@ public class CambioGame : CardGame<CambioPlayer>
             return;
         }
 
+        SwapHands(currentPlayer, otherPlayer);
+
+        NextTurn();
+    }
+
+    private void SwapHands(CambioPlayer player1, CambioPlayer player2)
+    {
         List<PlayingCard> tempList = new List<PlayingCard>();
-        PlayerHand currentPlayerHand = currentPlayer.Hand;
-        PlayerHand otherPlayerHand = otherPlayer.Hand;
+
+        PlayerHand currentPlayerHand = player1.Hand;
+        PlayerHand otherPlayerHand = player2.Hand;
 
         //REMOVE ALL CARDS FROM OTHER HAND AND ADD THEM TO TEMP LIST
         int cardCount = otherPlayerHand.Cards.Count;
@@ -368,8 +483,6 @@ public class CambioGame : CardGame<CambioPlayer>
 
         //ADD ALL TEMP CARDS BACK
         foreach (var card in tempList) currentPlayerHand.AddCard(card);
-
-        NextTurn();
     }
 
     #endregion
@@ -421,24 +534,38 @@ public class CambioGame : CardGame<CambioPlayer>
         //ADD TO DICTIONARY
         swapEventDictionary.Add(cardChosen, otherPlayer);
 
+        BringCardsToPlayerToChoose();
+    }
+
+    private void BringCardsToPlayerToChoose()
+    {
         float offset = -0.2f;
         float increment = 0.4f;
         //PLAYER CAN CHOOSE WHICH CARD TO KEEP
         foreach (var kvp in swapEventDictionary)
         {
             BringCardToPlayer(kvp.Key, currentPlayer, offset);
-            kvp.Key.SetInteractable(true);
-            kvp.Key.OnInteract += ChooseCardToKeep;
+
+            if (!currentPlayer.IsAI)
+            {
+                kvp.Key.SetInteractable(true);
+                kvp.Key.OnInteract += ChooseCardToKeepEvent;
+            }
 
             offset += increment;
         }
     }
 
-    private void ChooseCardToKeep(object sender, EventArgs e)
+    private void ChooseCardToKeepEvent(object sender, EventArgs e)
     {
         //CARD PLAYER WANTS TO KEEP
         PlayingCard chosenCard = sender as PlayingCard;
 
+        ChooseCardToKeep(chosenCard);
+    }
+
+    private void ChooseCardToKeep(PlayingCard chosenCard)
+    {
         //IF PLAYER CHOSES TO KEEP THEIR OWN CARD NOTHING HAPPENS
         if (swapEventDictionary.TryGetValue(chosenCard, out CambioPlayer playerWithCard) && playerWithCard == currentPlayer)
         {
@@ -478,10 +605,16 @@ public class CambioGame : CardGame<CambioPlayer>
             }
         }
 
-        foreach (var kvp in swapEventDictionary)
+        //REGISTER THE CHOSEN CARD AS SEEN
+        currentPlayer.AddSeenCard(chosenCard);
+
+        if (!currentPlayer.IsAI)
         {
-            kvp.Key.SetInteractable(false);
-            kvp.Key.OnInteract -= ChooseCardToKeep;
+            foreach (var kvp in swapEventDictionary)
+            {
+                kvp.Key.SetInteractable(false);
+                kvp.Key.OnInteract -= ChooseCardToKeepEvent;
+            }
         }
 
         swapEventDictionary.Clear();
@@ -544,18 +677,25 @@ public class CambioGame : CardGame<CambioPlayer>
             }
         }
 
+        BlindSwapCards(playerCard, cardChosen, otherPlayer);
+
+        NextTurn();
+    }
+
+    private void BlindSwapCards(PlayingCard playerCard, PlayingCard otherCard, CambioPlayer otherPlayer)
+    {
         if (playerCard != null)
         {
             // Get indexes
             int playerCardIndex = currentPlayer.Hand.GetIndexOfCard(playerCard);
-            int otherCardIndex = otherPlayer.Hand.GetIndexOfCard(cardChosen);
+            int otherCardIndex = otherPlayer.Hand.GetIndexOfCard(otherCard);
 
             // Remove from hands
             if (currentPlayer.Hand.RemoveCard(playerCard) &&
-                otherPlayer.Hand.RemoveCard(cardChosen))
+                otherPlayer.Hand.RemoveCard(otherCard))
             {
                 // Insert into opposite hands, keeping slot position
-                currentPlayer.Hand.InsertCard(cardChosen, playerCardIndex);
+                currentPlayer.Hand.InsertCard(otherCard, playerCardIndex);
                 otherPlayer.Hand.InsertCard(playerCard, otherCardIndex);
             }
         }
@@ -565,8 +705,6 @@ public class CambioGame : CardGame<CambioPlayer>
         }
 
         swapEventDictionary.Clear();
-
-        NextTurn();
     }
 
     #endregion
@@ -582,6 +720,125 @@ public class CambioGame : CardGame<CambioPlayer>
             else StartCoroutine(RevealSingleCard(card, currentPlayer, card.transform.position));
         }
     }
+
+    #endregion
+
+    #endregion
+
+    #region AI Abilities
+
+    #region Reveal Single Card
+
+    private void RevealPersonalCardEvent_AI()
+    {
+        int cardIndex = currentPlayer.GetIndexToLookAt();
+
+        PlayingCard cardToReveal = currentPlayer.Hand.GetCard(cardIndex);
+
+        StartCoroutine(RevealSingleCard(cardToReveal, currentPlayer, cardToReveal.transform.position, () => NextTurn()));
+    }
+
+    private void RevealOtherPlayerCardEvent_AI()
+    {
+        List<CambioPlayer> playersToChoose = players.Where(p => p != currentPlayer).ToList();
+        CambioPlayer randomPlayer = playersToChoose[UnityEngine.Random.Range(0, playersToChoose.Count)];
+        PlayingCard randomCard = randomPlayer.Hand.GetRandomCard();
+
+        StartCoroutine(RevealSingleCard(randomCard, currentPlayer, currentPlayer.transform.position, () => NextTurn()));
+    }
+
+    #endregion
+
+    #region Swap Hand
+
+    private void SwapHandEvent_AI()
+    {
+        if (currentPlayer.ShouldSwapHand())
+        {
+            List<CambioPlayer> playersToChoose = players.Where(p => p != currentPlayer).ToList();
+            CambioPlayer randomPlayer = playersToChoose[UnityEngine.Random.Range(0, playersToChoose.Count)];
+
+            SwapHands(currentPlayer, randomPlayer);
+        }
+
+        NextTurn();
+    }
+
+    #endregion
+
+    #region Choose 2 Card and Decide which to keep
+
+    private IEnumerator ChooseSwapEvent_AI()
+    {
+        //CHOOSE ONE OF YOUR OWN CARDS
+        PlayingCard cardToSwap = currentPlayer.Hand.GetCard(currentPlayer.GetIndexToSwap());
+        LiftCard(cardToSwap);
+
+        swapEventDictionary.Add(cardToSwap, currentPlayer);
+
+        yield return new WaitForSeconds(AIThinkingTime);
+
+        //CHOOSE A RANDOM OPPONENT CARD
+        List<CambioPlayer> playersToChoose = players.Where(p => p != currentPlayer).ToList();
+        CambioPlayer randomPlayer = playersToChoose[UnityEngine.Random.Range(0, playersToChoose.Count)];
+        PlayingCard randomCard = randomPlayer.Hand.GetRandomCard();
+
+        swapEventDictionary.Add(randomCard, randomPlayer);
+
+        //DECIDE WHETHER TO SWAP
+
+        BringCardsToPlayerToChoose();
+
+        yield return new WaitForSeconds(AIThinkingTime);
+
+        //FIND LOWER CARD
+        int lowestCardValue = int.MaxValue;
+        PlayingCard choice = null;
+        foreach (var kvp in swapEventDictionary)
+        {
+            int value = currentPlayer.GetCardValue(kvp.Key);
+
+            if (value < lowestCardValue)
+            {
+                lowestCardValue = value;
+                choice = kvp.Key;
+            }
+        }
+
+        ChooseCardToKeep(choice);
+    }
+
+    #endregion
+
+    #region Blind Swap 2 Cards
+
+    private IEnumerator BlindSwapEvent_AI()
+    {
+        //CHOOSE ONE OF YOUR OWN CARDS
+        PlayingCard cardToSwap = currentPlayer.Hand.GetCard(currentPlayer.GetIndexToSwap());
+
+        LiftCard(cardToSwap);
+
+        swapEventDictionary.Add(cardToSwap, currentPlayer);
+
+        yield return new WaitForSeconds(AIThinkingTime);
+
+        //CHOOSE A RANDOM OPPONENT CARD
+        List<CambioPlayer> playersToChoose = players.Where(p => p != currentPlayer).ToList();
+        CambioPlayer randomPlayer = playersToChoose[UnityEngine.Random.Range(0, playersToChoose.Count)];
+        PlayingCard randomCard = randomPlayer.Hand.GetRandomCard();
+
+        swapEventDictionary.Add(randomCard, randomPlayer);
+
+
+        BlindSwapCards(cardToSwap, randomCard, randomPlayer);
+
+        yield return new WaitForSeconds(AIThinkingTime);
+
+        NextTurn();
+    }
+
+    #endregion
 
     #endregion
 
@@ -602,5 +859,4 @@ public class CambioGame : CardGame<CambioPlayer>
         NextTurn();
         return null;
     }
-
 }
